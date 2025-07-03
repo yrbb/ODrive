@@ -3,6 +3,8 @@
 
 #include <fibre/async_stream.hpp>
 #include <fibre/../../stream_utils.hpp>
+#include <map>
+#include <string>
 
 #define MAX_LINE_LENGTH ((size_t)256)
 
@@ -10,6 +12,8 @@ class AsciiProtocol {
 public:
     AsciiProtocol(fibre::AsyncStreamSource* rx_channel, fibre::AsyncStreamSink* tx_channel)
         : rx_channel_(rx_channel), sink_(*tx_channel) {}
+
+    static const std::map<uint8_t, std::string> keyMap;
 
     void start();
 
@@ -24,6 +28,7 @@ private:
     void cmd_info_dump(char * pStr, bool use_checksum);
     void cmd_system_ctrl(char * pStr, bool use_checksum);
     void cmd_read_property(char * pStr, bool use_checksum);
+    void cmd_read_id_property(char * pStr, bool use_checksum);
     void cmd_write_property(char * pStr, bool use_checksum);
     void cmd_update_axis_wdg(char * pStr, bool use_checksum);
     void cmd_unknown(char * pStr, bool use_checksum);

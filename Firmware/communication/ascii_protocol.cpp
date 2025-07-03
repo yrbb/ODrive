@@ -28,11 +28,39 @@ using namespace fibre;
 #define TO_STR(s) TO_STR_INNER(s)
 
 /* Private variables ---------------------------------------------------------*/
+const std::map<uint8_t, std::string> AsciiProtocol::keyMap = {
+    {0, "axis%d.motor.config.pole_pairs"},                    // 极对数
+    {1, "axis%d.motor.config.calibration_current"},           // 校准电流
+    {2, "axis%d.motor.config.resistance_calib_max_voltage"},  // 校准电压
+    {3, "axis%d.motor.config.motor_type"},                    // 电机类型
+    {4, "axis%d.motor.config.requested_current_range"},       // 采样范围
+    {5, "axis%d.motor.config.current_control_bandwidth"},     // 电流环带宽
+    {6, "axis%d.motor.config.torque_constant"},               // 扭矩常数
+    {7, "axis%d.motor.config.current_lim"},                   // 最大电流
+    {8, "axis%d.encoder.config.mode"},                        // 编码器模式
+    {9, "axis%d.encoder.config.cpr"},                         // 编码器分辨率
+    {10, "axis%d.encoder.config.bandwidth"},                  // 编码器带宽
+    {11, "axis%d.encoder.config.calib_scan_distance"},        // 编码器校准扫描距离
+    {12, "axis%d.controller.config.vel_limit"},               // 最大转速
+    {13, "axis%d.controller.config.control_mode"},            // 控制模式
+    {14, "axis%d.controller.config.input_mode"},              // 输入模式
+    {15, "axis%d.controller.config.pos_gain"},                // 位置环增益
+    {16, "axis%d.controller.config.vel_gain"},                // 速度环增益
+    {17, "axis%d.controller.config.vel_integrator_gain"},     // 速度环积分增益
+    {18, "axis%d.controller.config.vel_ramp_rate"},           // 速度环爬升率
+    {19, "axis%d.controller.config.input_filter_bandwidth"},  // 输入滤波带宽
+    {20, "axis%d.controller.config.torque_ramp_rate"},        // 扭矩环爬升率
+    {21, "axis%d.controller.config.inertia"},                 // 惯量
+    {22, "axis%d.trap_traj.config.vel_limit"},                // 梯形轨迹速度限制
+    {23, "axis%d.trap_traj.config.accel_limit"},              // 梯形轨迹加速度限制
+    {24, "axis%d.trap_traj.config.decel_limit"},              // 梯形轨迹减速度限制
+    {25, "axis%d.requested_state"},
+};
 
 #if HW_VERSION_MAJOR == 3
-static Introspectable root_obj = ODrive3TypeInfo<ODrive>::make_introspectable(odrv);
+Introspectable root_obj = ODrive3TypeInfo<ODrive>::make_introspectable(odrv);
 #elif HW_VERSION_MAJOR == 4
-static Introspectable root_obj = ODrive4TypeInfo<ODrive>::make_introspectable(odrv);
+Introspectable root_obj = ODrive4TypeInfo<ODrive>::make_introspectable(odrv);
 #endif
 
 /* Private function prototypes -----------------------------------------------*/
@@ -348,6 +376,11 @@ void AsciiProtocol::cmd_read_property(char * pStr, bool use_checksum) {
     if (sscanf(pStr, "r %255s", name) < 1) {
         respond(use_checksum, "invalid command format");
     } else {
+        if (pStr[2] == 'm') {
+            cmd_read_id_property(pStr, use_checksum);
+            return;
+        }
+
         Introspectable property = root_obj.get_child(name, sizeof(name));
         const StringConvertibleTypeInfo* type_info = dynamic_cast<const StringConvertibleTypeInfo*>(property.get_type_info());
         if (!type_info) {
@@ -355,9 +388,39 @@ void AsciiProtocol::cmd_read_property(char * pStr, bool use_checksum) {
         } else {
             char response[10];
             bool success = type_info->get_string(property, response, sizeof(response));
-            respond(use_checksum, success ? response : "not implemented");
+            respond(use_checksum, "%s %s", name, success ? response : "not implemented");
         }
     }
+}
+
+// r m0i22
+void AsciiProtocol::cmd_read_id_property(char * pStr, bool use_checksum) {
+    uint8_t axisId;
+    uint8_t paramId;
+    if (sscanf(pStr + 2, "m%hhui%hhu", &axisId, &paramId) != 2) {
+        respond(use_checksum, "invalid command format");
+        return;
+    }
+
+    if (keyMap.find(paramId) == keyMap.end()) {
+        respond(use_checksum, "invalid property");
+        return;
+    }
+    
+    const std::string& format = keyMap.at(paramId);
+
+    char name[MAX_LINE_LENGTH];
+    snprintf(name, sizeof(name), format.c_str(), axisId);
+
+    Introspectable property = root_obj.get_child(name, sizeof(name));
+    const StringConvertibleTypeInfo* type_info = dynamic_cast<const StringConvertibleTypeInfo*>(property.get_type_info());
+    if (!type_info) {
+        respond(use_checksum, "invalid property");
+    }
+
+    char response[10];
+    bool success = type_info->get_string(property, response, sizeof(response));
+    respond(use_checksum, "%d %d %s", axisId, paramId, success ? response : "not implemented");
 }
 
 // @brief Executes the set write position command

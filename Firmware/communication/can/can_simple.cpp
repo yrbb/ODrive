@@ -1,8 +1,41 @@
-
 #include "can_simple.hpp"
-
+#include <stdio.h>
+#include <string>
 #include <odrive_main.h>
 #include <functional>
+#include <fibre/introspection.hpp>
+
+extern Introspectable root_obj;
+
+// 定义静态成员变量 keyMap
+const std::map<uint8_t, std::string> CANSimple::keyMap = {
+    {0, "axis%d.motor.config.pole_pairs"},                    // 极对数
+    {1, "axis%d.motor.config.calibration_current"},           // 校准电流
+    {2, "axis%d.motor.config.resistance_calib_max_voltage"},  // 校准电压
+    {3, "axis%d.motor.config.motor_type"},                    // 电机类型
+    {4, "axis%d.motor.config.requested_current_range"},       // 采样范围
+    {5, "axis%d.motor.config.current_control_bandwidth"},     // 电流环带宽
+    {6, "axis%d.motor.config.torque_constant"},               // 扭矩常数
+    {7, "axis%d.motor.config.current_lim"},                   // 最大电流
+    {8, "axis%d.encoder.config.mode"},                        // 编码器模式
+    {9, "axis%d.encoder.config.cpr"},                         // 编码器分辨率
+    {10, "axis%d.encoder.config.bandwidth"},                  // 编码器带宽
+    {11, "axis%d.encoder.config.calib_scan_distance"},        // 编码器校准扫描距离
+    {12, "axis%d.controller.config.vel_limit"},               // 最大转速
+    {13, "axis%d.controller.config.control_mode"},            // 控制模式
+    {14, "axis%d.controller.config.input_mode"},              // 输入模式
+    {15, "axis%d.controller.config.pos_gain"},                // 位置环增益
+    {16, "axis%d.controller.config.vel_gain"},                // 速度环增益
+    {17, "axis%d.controller.config.vel_integrator_gain"},     // 速度环积分增益
+    {18, "axis%d.controller.config.vel_ramp_rate"},           // 速度环爬升率
+    {19, "axis%d.controller.config.input_filter_bandwidth"},  // 输入滤波带宽
+    {20, "axis%d.controller.config.torque_ramp_rate"},        // 扭矩环爬升率
+    {21, "axis%d.controller.config.inertia"},                 // 惯量
+    {22, "axis%d.trap_traj.config.vel_limit"},                // 梯形轨迹速度限制
+    {23, "axis%d.trap_traj.config.accel_limit"},              // 梯形轨迹加速度限制
+    {24, "axis%d.trap_traj.config.decel_limit"},              // 梯形轨迹减速度限制
+    {25, "axis%d.requested_state"},
+};
 
 bool CANSimple::init() {
     for (size_t i = 0; i < AXIS_COUNT; ++i) {
@@ -69,17 +102,8 @@ void CANSimple::do_command(Axis& axis, const can_Message_t& msg) {
         case MSG_ODRIVE_ESTOP:
             estop_callback(axis, msg);
             break;
-        case MSG_GET_MOTOR_ERROR:
-            if (msg.rtr || msg.len == 0)
-                get_motor_error_callback(axis);
-            break;
-        case MSG_GET_ENCODER_ERROR:
-            if (msg.rtr || msg.len == 0)
-                get_encoder_error_callback(axis);
-            break;
-        case MSG_GET_SENSORLESS_ERROR:
-            if (msg.rtr || msg.len == 0)
-                get_sensorless_error_callback(axis);
+        case MSG_GET_ERROR:
+            get_error_callback(axis, msg);
             break;
         case MSG_SET_AXIS_NODE_ID:
             set_axis_nodeid_callback(axis, msg);
@@ -107,9 +131,6 @@ void CANSimple::do_command(Axis& axis, const can_Message_t& msg) {
         case MSG_SET_INPUT_TORQUE:
             set_input_torque_callback(axis, msg);
             break;
-        case MSG_SET_CONTROLLER_MODES:
-            set_controller_modes_callback(axis, msg);
-            break;
         case MSG_SET_LIMITS:
             set_limits_callback(axis, msg);
             break;
@@ -134,7 +155,7 @@ void CANSimple::do_command(Axis& axis, const can_Message_t& msg) {
                 get_sensorless_estimates_callback(axis);
             break;
         case MSG_RESET_ODRIVE:
-            NVIC_SystemReset();
+            reboot_callback(axis);
             break;
         case MSG_GET_BUS_VOLTAGE_CURRENT:
             if (msg.rtr || msg.len == 0)
@@ -155,8 +176,14 @@ void CANSimple::do_command(Axis& axis, const can_Message_t& msg) {
         case MSG_GET_ADC_VOLTAGE:
             get_adc_voltage_callback(axis, msg);
             break;
-        case MSG_GET_CONTROLLER_ERROR:
-            get_controller_error_callback(axis);
+        case MSG_SAVE_CONFIG:
+            save_config_callback(axis);
+            break;
+        case MSG_SET_PARAMS:
+            set_params_callback(axis, msg);
+            break;
+        case MSG_GET_PARAMS:
+            get_params_callback(axis, msg);
             break;
         default:
             break;
@@ -171,14 +198,31 @@ void CANSimple::estop_callback(Axis& axis, const can_Message_t& msg) {
     axis.error_ |= Axis::ERROR_ESTOP_REQUESTED;
 }
 
+bool CANSimple::get_error_callback(const Axis& axis, const can_Message_t& msg) {
+    uint8_t errorId = can_getSignal<uint8_t>(msg, 0, 32, true);
+    switch (errorId) {
+        case ERROR_MOTOR:
+            return get_motor_error_callback(axis);
+        case ERROR_ENCODER:
+            return get_encoder_error_callback(axis);
+        case ERROR_CONTROLLER:
+            return get_controller_error_callback(axis);
+        case ERROR_SENSORLESS:
+            return get_sensorless_error_callback(axis);
+        default:
+            return false;
+    }
+}
+
 bool CANSimple::get_motor_error_callback(const Axis& axis) {
     can_Message_t txmsg;
     txmsg.id = axis.config_.can.node_id << NUM_CMD_ID_BITS;
-    txmsg.id += MSG_GET_MOTOR_ERROR;  // heartbeat ID
+    txmsg.id += MSG_GET_ERROR;  // heartbeat ID
     txmsg.isExt = axis.config_.can.is_extended;
     txmsg.len = 8;
 
-    can_setSignal(txmsg, axis.motor_.error_, 0, 64, true);
+    can_setSignal(txmsg, ERROR_MOTOR, 0, 32, true);
+    can_setSignal(txmsg, axis.motor_.error_, 32, 72, true);
 
     return canbus_->send_message(txmsg);
 }
@@ -186,11 +230,12 @@ bool CANSimple::get_motor_error_callback(const Axis& axis) {
 bool CANSimple::get_encoder_error_callback(const Axis& axis) {
     can_Message_t txmsg;
     txmsg.id = axis.config_.can.node_id << NUM_CMD_ID_BITS;
-    txmsg.id += MSG_GET_ENCODER_ERROR;  // heartbeat ID
+    txmsg.id += MSG_GET_ERROR;  // heartbeat ID
     txmsg.isExt = axis.config_.can.is_extended;
     txmsg.len = 8;
 
-    can_setSignal(txmsg, axis.encoder_.error_, 0, 32, true);
+    can_setSignal(txmsg, ERROR_ENCODER, 0, 32, true);
+    can_setSignal(txmsg, axis.encoder_.error_, 32, 32, true);
 
     return canbus_->send_message(txmsg);
 }
@@ -198,11 +243,12 @@ bool CANSimple::get_encoder_error_callback(const Axis& axis) {
 bool CANSimple::get_sensorless_error_callback(const Axis& axis) {
     can_Message_t txmsg;
     txmsg.id = axis.config_.can.node_id << NUM_CMD_ID_BITS;
-    txmsg.id += MSG_GET_SENSORLESS_ERROR;  // heartbeat ID
+    txmsg.id += MSG_GET_ERROR;  // heartbeat ID
     txmsg.isExt = axis.config_.can.is_extended;
     txmsg.len = 8;
 
-    can_setSignal(txmsg, axis.sensorless_estimator_.error_, 0, 32, true);
+    can_setSignal(txmsg, ERROR_SENSORLESS, 0, 32, true);
+    can_setSignal(txmsg, axis.sensorless_estimator_.error_, 32, 32, true);
 
     return canbus_->send_message(txmsg);
 }
@@ -210,11 +256,12 @@ bool CANSimple::get_sensorless_error_callback(const Axis& axis) {
 bool CANSimple::get_controller_error_callback(const Axis& axis) {
     can_Message_t txmsg;
     txmsg.id = axis.config_.can.node_id << NUM_CMD_ID_BITS;
-    txmsg.id += MSG_GET_CONTROLLER_ERROR;  // heartbeat ID
+    txmsg.id += MSG_GET_ERROR;  // heartbeat ID
     txmsg.isExt = axis.config_.can.is_extended;
     txmsg.len = 8;
 
-    can_setSignal(txmsg, axis.controller_.error_, 0, 32, true);
+    can_setSignal(txmsg, ERROR_CONTROLLER, 0, 32, true);
+    can_setSignal(txmsg, axis.controller_.error_, 32, 32, true);
 
     return canbus_->send_message(txmsg);
 }
@@ -385,6 +432,67 @@ bool CANSimple::get_adc_voltage_callback(const Axis& axis, const can_Message_t& 
 
 void CANSimple::clear_errors_callback(Axis& axis, const can_Message_t& msg) {
     odrv.clear_errors();  // TODO: might want to clear axis errors only
+}
+
+
+void CANSimple::reboot_callback(const Axis& axis) {
+    odrv.reboot();
+}
+
+void CANSimple::save_config_callback(const Axis& axis) {
+    odrv.save_configuration();
+}
+
+void CANSimple::set_params_callback(const Axis& axis, const can_Message_t& msg) {
+    // uint8_t: paramId, float: value
+    uint8_t paramId = can_getSignal<uint8_t>(msg, 0, 32, true);
+    auto it = keyMap.find(paramId);
+    if (it == keyMap.end()) {
+        return;
+    }
+
+    float value = can_getSignal<float>(msg, 32, 32, true);
+
+    char name[128];
+    std::snprintf(name, sizeof(name), it->second.c_str(), (uint8_t)axis.config_.can.node_id);
+
+    Introspectable property = root_obj.get_child(name, sizeof(name));
+    const FloatSettableTypeInfo* type_info = dynamic_cast<const FloatSettableTypeInfo*>(property.get_type_info());
+    if (type_info) {
+        type_info->set_float(property, value);
+    }
+}
+
+bool CANSimple::get_params_callback(const Axis& axis, const can_Message_t& msg) {
+    uint8_t paramId = can_getSignal<uint8_t>(msg, 0, 32, true);
+    auto it = keyMap.find(paramId);
+    if (it == keyMap.end()) {
+        return false;
+    }
+        
+    can_Message_t txmsg;
+    txmsg.id = axis.config_.can.node_id << NUM_CMD_ID_BITS;
+    txmsg.id += MSG_GET_PARAMS;
+    txmsg.isExt = axis.config_.can.is_extended;
+    txmsg.len = 8;
+
+    char name[128];
+    std::snprintf(name, sizeof(name), it->second.c_str(), (uint8_t)axis.config_.can.node_id);
+
+    Introspectable property = root_obj.get_child(name, sizeof(name));
+    const StringConvertibleTypeInfo* type_info = dynamic_cast<const StringConvertibleTypeInfo*>(property.get_type_info());
+    if (!type_info) {
+        return false;
+    }
+
+    char response[10];
+    type_info->get_string(property, response, sizeof(response));
+
+    float val = std::stof(response);
+    
+    can_setSignal<uint8_t>(txmsg, paramId, 0, 8, true);
+    can_setSignal<float>(txmsg, val, 8, 32, true);
+    return canbus_->send_message(txmsg);
 }
 
 uint32_t CANSimple::service_stack() {

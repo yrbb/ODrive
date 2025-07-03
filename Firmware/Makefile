@@ -63,6 +63,12 @@ libfibre-all:
 clean:
 	-rm -fR .dep $(BUILD_DIR)
 
+# Target to only build the firmware
+build:
+	@mkdir -p autogen
+	@$(PY_CMD) ../tools/odrive/version.py --output autogen/version.c
+	@tup --quiet -no-environ-check
+
 flash-stlink2: all
 	$(OPENOCD) \
 		-c 'reset halt' \
@@ -106,4 +112,4 @@ unlock: unlock-stlink2
 
 .PHONY: stlink2-config flash-stlink2 gdb-stlink2 erase-stlink2 unlock-stlink2
 .PHONY: flash-bmp gdb-bmp
-.PHONY: all clean flash gdb erase unlock dfu fibre
+.PHONY: all clean flash gdb erase unlock dfu fibre build

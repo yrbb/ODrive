@@ -144,7 +144,7 @@ struct StringConvertibleTypeInfo {
 };
 
 struct FloatSettableTypeInfo {
-    //virtual bool get_float(const Introspectable& obj, float* val) const { return false; }
+    // virtual bool get_float(const Introspectable& obj, float* val) const { return false; }
     virtual bool set_float(const Introspectable& obj, float val) const { return false; }
 };
 
@@ -198,6 +198,10 @@ struct FibrePropertyTypeInfo<Property<T>> : FloatSettableTypeInfo, StringConvert
         as<const Property<T>>(obj).exchange(static_cast<T>(value));
         return true;
     }
+
+    // bool get_float(const Introspectable& obj, float* val) const override {
+    //     return to_float(static_cast<maybe_underlying_type_t<T>>(as<const Property<T>>(obj).read()), val, 0);
+    // }
 
     bool set_float(const Introspectable& obj, float val) const override {
         maybe_underlying_type_t<T> value{};

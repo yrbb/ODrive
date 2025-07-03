@@ -107,7 +107,10 @@
 			"readerwriter": "cpp",
 			"charconv": "cpp",
 			"image": "cpp",
-			"imageutils": "cpp"
+			"imageutils": "cpp",
+			"__bit_reference": "cpp",
+			"__hash_table": "cpp",
+			"__tree": "cpp"
 		}
 	}
 }

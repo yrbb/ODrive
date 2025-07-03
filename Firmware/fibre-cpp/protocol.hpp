@@ -201,6 +201,12 @@ static bool to_string(const T& value, char * buffer, size_t length, ...) {
     return false;
 }
 
+// template<typename T>
+// static bool to_float(const T& value, float* val, int) {
+//     *val = static_cast<float>(value);
+//     return true;
+// }
+
 template<typename T, typename = typename format_traits_t<T>::type>
 static bool from_string(const char * buffer, size_t length, T* property, int) {
     // sscanf doesn't work well with integers that are smaller than int, so we

@@ -3,6 +3,7 @@
 
 #include "canbus.hpp"
 #include "axis.hpp"
+#include <map>
 
 class CANSimple {
    public:
@@ -10,9 +11,7 @@ class CANSimple {
         MSG_CO_NMT_CTRL = 0x000,  // CANOpen NMT Message REC
         MSG_ODRIVE_HEARTBEAT,
         MSG_ODRIVE_ESTOP,
-        MSG_GET_MOTOR_ERROR,  // Errors
-        MSG_GET_ENCODER_ERROR,
-        MSG_GET_SENSORLESS_ERROR,
+        MSG_GET_ERROR, // 1: Motor, 2: Encoder, 3: Controller, 4: Sensorless
         MSG_SET_AXIS_NODE_ID,
         MSG_SET_AXIS_REQUESTED_STATE,
         MSG_SET_AXIS_STARTUP_CONFIG,
@@ -36,9 +35,20 @@ class CANSimple {
         MSG_SET_POS_GAIN,
         MSG_SET_VEL_GAINS,
         MSG_GET_ADC_VOLTAGE,
-        MSG_GET_CONTROLLER_ERROR,
+        MSG_SAVE_CONFIG,
+        MSG_SET_PARAMS,
+        MSG_GET_PARAMS,
         MSG_CO_HEARTBEAT_CMD = 0x700,  // CANOpen NMT Heartbeat  SEND
     };
+
+    enum {
+        ERROR_MOTOR = 1,
+        ERROR_ENCODER = 2,
+        ERROR_CONTROLLER = 3,
+        ERROR_SENSORLESS = 4,
+    };
+
+    static const std::map<uint8_t, std::string> keyMap;
 
     CANSimple(CanBusBase* canbus) : canbus_(canbus) {}
 
@@ -55,6 +65,7 @@ class CANSimple {
     void do_command(Axis& axis, const can_Message_t& cmd);
     
     // Get functions (msg.rtr bit must be set)
+    bool get_error_callback(const Axis& axis, const can_Message_t& msg);
     bool get_motor_error_callback(const Axis& axis);
     bool get_encoder_error_callback(const Axis& axis);
     bool get_controller_error_callback(const Axis& axis);
@@ -66,6 +77,7 @@ class CANSimple {
     bool get_bus_voltage_current_callback(const Axis& axis);
     // msg.rtr bit must NOT be set
     bool get_adc_voltage_callback(const Axis& axis, const can_Message_t& msg);
+    bool get_params_callback(const Axis& axis, const can_Message_t& msg);
 
     // Set functions
     static void set_axis_nodeid_callback(Axis& axis, const can_Message_t& msg);
@@ -82,12 +94,15 @@ class CANSimple {
     static void set_linear_count_callback(Axis& axis, const can_Message_t& msg);
     static void set_pos_gain_callback(Axis& axis, const can_Message_t& msg);
     static void set_vel_gains_callback(Axis& axis, const can_Message_t& msg);
+    static void set_params_callback(const Axis& axis, const can_Message_t& msg);
 
     // Other functions
     static void nmt_callback(const Axis& axis, const can_Message_t& msg);
     static void estop_callback(Axis& axis, const can_Message_t& msg);
     static void clear_errors_callback(Axis& axis, const can_Message_t& msg);
     static void start_anticogging_callback(const Axis& axis, const can_Message_t& msg);
+    static void reboot_callback(const Axis& axis);
+    static void save_config_callback(const Axis& axis);
 
     static constexpr uint8_t NUM_NODE_ID_BITS = 6;
     static constexpr uint8_t NUM_CMD_ID_BITS = 11 - NUM_NODE_ID_BITS;

@@ -40,7 +40,7 @@ public:
     CANSimple can_simple_{this};
 
     osThreadId thread_id_;
-    const uint32_t stack_size_ = 1024;  // Bytes
+    const uint32_t stack_size_ = 1024*5;  // Bytes
 
 private:
     static const uint8_t kCanFifoNone = 0xff;
